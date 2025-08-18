@@ -34,6 +34,14 @@ jobs:
             TF_VAR_instance_type: t3.micro
         steps:
             - uses: actions/checkout@v4
+
+            - name: Restore Terraform state
+              uses: actions/download-artifact@v4
+              with:
+                name: tf-state
+                path: terraform
+              continue-on-error: true
+
             - uses: hashicorp/setup-terraform@v3
             - uses: aws-actions/configure-aws-credentials@v4
               with:
