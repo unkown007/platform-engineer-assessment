@@ -30,6 +30,7 @@ jobs:
         runs-on: ubuntu-latest
         env:
             TF_IN_AUTOMATION: true
+            TF_VAR_public_key_openssh: ${{ secrets.EC2_SSH_PUBLIC_KEY }}
         steps:
             - uses: actions/checkout@v4
             - uses: hashicorp/setup-terraform@v3
