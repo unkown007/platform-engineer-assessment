@@ -1,0 +1,149 @@
+name: platform-pipeline
+
+on:
+    workflow_dispatch:
+        inputs:
+            run_terraform:
+                description: 'Run Terraform (Provision EC2)'
+                type: boolean
+                default: false
+            run_ansible:
+                description: 'Run Ansible (install k3s)'
+                type: boolean
+                default: false
+            run_build:
+                description: 'Build & Push Docker Image'
+                type: boolean
+                default: false
+            run_deploy:
+                description: 'Deploy to k3s'
+                type: boolean
+                default: false
+
+
+env:
+    REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+
+jobs:
+    terraform:
+        if: ${{ inputs.run_terraform == 'true' }}
+        runs-on: ubuntu-latest
+        env:
+            TF_IN_AUTOMATION: true
+        steps:
+            - uses: actions/checkout@v4
+            - uses: hashicorp/setup-terraform@v3
+            - uses: aws-actions/configure-aws-credentials@v4
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+            - name: Terraform Init & Apply
+              working-directory: terraform
+              run: |
+                terraform init -input=false
+                terraform apply -auto-approve -input=false
+            - name: Export Terraform outputs
+              id: tfout
+              working-directory: terraform
+              run: |
+                pub_ip=$(terraform output -raw public_ip 2>/dev/null || true)
+                echo "public_ip=$pub_ip" >> $GITHUB_OUTPUT
+                echo "PUBLIC_IP=$pub_ip" >> $GITHUB_ENV
+            - uses: actions/upload-artifact@v4
+              with:
+                name: tf-state
+                path: |
+                    terraform/terraform.tfstate
+                    terraform/terraform.tfstate.backup
+                if-no-files-found: ignore
+
+
+    ansible:
+        needs: [terraform]
+        if: ${{ inputs.run_ansible == 'true' }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: ansible/download-artifact@v4
+              with:
+                name: tf-state
+                path: terraform
+              continue-on-error: true
+            - name: Install Ansible
+              run: |
+                python3 -m pip install --upgrade pip
+                pip3 install ansible
+            - name: Write SSH Key
+              run: |
+                mkdir -p ~/.ssh
+                echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+                chmod 600 ~/.ssh/id_rsa
+            - name: Determine public IP
+              working-directory: terraform
+              run: |
+                if [ -z "${{ env.PUBLIC_IP }}" ]; then
+                    echo "PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null || true)" >> $GITHUB_ENV
+                fi
+                echo "Using PUBLIC_IP=${{ env.PUBLIC_IP }}"
+            - name: Create inventory
+              run: |
+                echo "[k3s]" > ansible/inventory.ini
+                echo "${{ env.PUBLIC_IP }}" ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa >> ansible/inventory.ini
+            - name: Run Ansible Playbook
+              run: |
+                ansible-playbook -i ansible/inventory.ini ansible/site.yml
+
+
+    build_push:
+        needs: [ansible]
+        if: ${{ inputs.run_build == 'true' }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Login to Docker Hub
+              run: |
+                echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+            - name: Build & Push
+              run: |
+                IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:${{ github.sha }}"
+                echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+                docker build -t "$IMAGE" -f docker/Dockerfile .
+                docker push "$IMAGE"
+            - name: Expose image output
+              id: img
+              run: echo "image=${IMAGE}" >> $GITHUB_OUTPUT
+    
+    deploy:
+        needs: [build_push]
+        if: ${{ inputs.run_deploy == 'true' }}
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - name: Install kubectl
+            run: |
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+          - name: Write SSH key
+            run: |
+              mkdir -p ~/.ssh
+              echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+              chmod 600 ~/.ssh/id_rsa
+          - name: Fetch kubconfig from k3s host
+            env:
+              PUBLIC_IP: ${{ env.PUBLIC_IP }}
+            run: |
+              if [ -z "$PUBLIC_IP" ]; then
+                  echo "PUBLIC_IP env var must be set (from terraform outputs)." && exit 1
+              fi
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/etc/rancher/k3s/k3s.yaml kubeconfig
+              sed -i "s/127.0.0.1/$PUBLIC_IP/" kubeconfig
+              echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+          - name: Inject Built image into manifests
+            run: |
+              sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
+          - name: Apply manifests
+            run: |
+              kubectl apply -f k8s/
+              kubectl rollout status deploy/go-analyzer --timeout=180s
