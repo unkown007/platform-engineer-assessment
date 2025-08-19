@@ -152,6 +152,8 @@ jobs:
         # needs: [ansible]
         if: ${{ inputs.run_build == true }}
         runs-on: ubuntu-latest
+        outputs:
+          image: ${{ steps.img.outputs.image }}
         steps:
             - uses: actions/checkout@v4
             - name: Login to Docker Hub
@@ -226,6 +228,17 @@ jobs:
           - name: Inject Built image into manifests
             run: |
               sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
+
+          - name: Pick image and inject
+            run: |
+              IMAGE="${{ needs.build_push.outputs.image }}"
+              if [ -z "$IMAGE" ]; then
+                echo "No image from build_push; falling back to :latest"
+                IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:latest"
+              fi
+              echo "Using IMAGE=$IMAGE"
+              sed -i "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml
+              grep -n 'image:' k8s/deployment.yaml
 
           - name: Apply manifests
             run: |
