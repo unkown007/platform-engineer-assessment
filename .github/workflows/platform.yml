@@ -1,25 +1,8 @@
 name: platform-pipeline
 
 on:
-    workflow_dispatch:
-        inputs:
-            run_terraform:
-                description: 'Run Terraform (Provision EC2)'
-                type: boolean
-                default: false
-            run_ansible:
-                description: 'Run Ansible (install k3s)'
-                type: boolean
-                default: false
-            run_build:
-                description: 'Build & Push Docker Image'
-                type: boolean
-                default: false
-            run_deploy:
-                description: 'Deploy to k3s'
-                type: boolean
-                default: false
-
+    push:
+        branches: [main]
 
 env:
     REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
