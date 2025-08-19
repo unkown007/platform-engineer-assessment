@@ -1,8 +1,24 @@
 name: platform-pipeline
 
 on:
-    push:
-        branches: [main]
+    workflow_dispatch:
+        inputs:
+            run_terraform:
+                description: 'Run Terraform (Provision EC2)'
+                type: boolean
+                default: false
+            run_ansible:
+                description: 'Run Ansible (install k3s)'
+                type: boolean
+                default: false
+            run_build:
+                description: 'Build & Push Docker Image'
+                type: boolean
+                default: false
+            run_deploy:
+                description: 'Deploy to k3s'
+                type: boolean
+                default: false
 
 env:
     REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
@@ -11,6 +27,7 @@ env:
 
 jobs:
     terraform:
+        if: ${{ github.event.inputs.run_terraform == true }}
         runs-on: ubuntu-latest
         env:
             TF_IN_AUTOMATION: true
@@ -55,6 +72,7 @@ jobs:
 
     ansible:
         needs: [terraform]
+        if: ${{ github.event.inputs.run_ansible == true }}
         runs-on: ubuntu-latest
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
@@ -120,6 +138,7 @@ jobs:
 
     unit_tests:
         needs: [ansible]
+        if: ${{ github.event.inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -138,6 +157,7 @@ jobs:
 
     build_push:
         needs: [unit_tests, ansible]
+        if: ${{ github.event.inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -157,6 +177,7 @@ jobs:
     
     deploy:
         needs: [build_push]
+        if: ${{ github.event.inputs.run_deploy == true }}
         runs-on: ubuntu-latest
         steps:
           - uses: actions/checkout@v4

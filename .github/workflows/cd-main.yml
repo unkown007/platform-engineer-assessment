@@ -1,0 +1,129 @@
+name: CI/CD Pipeline
+
+on:
+    push:
+        branches: [main]
+
+env:
+    REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+    NAME_PREFIX: pe-assessment
+    DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+    unit_tests:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-go@v5
+              with:
+                go-version: '1.22'
+                cache: true
+            - name: Run unit tests
+              working-directory: go-app
+              run: go test ./... -v -coverprofile=coverage.out
+            - uses: actions/upload-artifact@v4
+              with:
+                name: go-coverage
+                path: go-app/coverage.out
+
+
+    build_push:
+        needs: [unit_tests]
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Login to Docker Hub
+              run: |
+                echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+            - name: Build & Push
+              run: |
+                IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:${{ github.sha }}"
+                echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+                docker build -t "$IMAGE" -f go-app/Dockerfile ./go-app
+                docker push "$IMAGE"
+                # push stable tag so Deploy can run in a separate dispatch
+                LATEST="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:latest"
+                docker tag "$IMAGE" "$LATEST"
+                docker push "$LATEST"
+    
+    deploy:
+        needs: [build_push]
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+
+          - name: Install kubectl
+            run: |
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+          - name: Write SSH key
+            run: |
+              mkdir -p ~/.ssh
+              echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+              chmod 600 ~/.ssh/id_rsa
+
+          - name: Resolve EC2 public IP by tag
+            id: ip
+            shell: bash
+            run: |
+              IP=$(aws ec2 describe-instances \
+                --filters "Name=tag:Name,Values=${NAME_PREFIX}-ec2" "Name=instance-state-name,Values=running" \
+                --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+              if [[ -z "$IP" || "$IP" == "None" ]]; then
+                echo "No running instance found with tag Name=${NAME_PREFIX}-ec2" >&2
+                exit 1
+              fi
+              echo "PUBLIC_IP=$IP" >> $GITHUB_ENV
+              echo "Using PUBLIC_IP=$IP"
+
+
+          - name: Fetch kubconfig from k3s host
+            env:
+              PUBLIC_IP: ${{ env.PUBLIC_IP }}
+            run: |
+              if [ -z "$PUBLIC_IP" ]; then
+                  echo "PUBLIC_IP env var must be set (from terraform outputs)." && exit 1
+              fi
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/etc/rancher/k3s/k3s.yaml kubeconfig
+              sed -i "s/127.0.0.1/$PUBLIC_IP/" kubeconfig
+              echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+
+          - name: Fetch kubeconfig from host (user copy)
+            run: |
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/home/ubuntu/.kube/config kubeconfig
+              echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+
+          - name: Set IMAGE (use stable :latest)
+            run: |
+              IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:latest"
+              echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+              echo "Using IMAGE=$IMAGE"
+
+          - name: Inject image into manifests (idempotent)
+            run: |
+              if grep -q 'IMAGE_PLACEHOLDER' k8s/deployment.yaml; then
+                sed -i "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml
+              else
+                # fallback: replace existing image line
+                sed -i -E "s|(image:\s*).*$|\1$IMAGE|" k8s/deployment.yaml
+              fi
+              grep -n 'image:' k8s/deployment.yaml
+
+          - name: Apply runtime secret
+            run: |
+              kubectl create secret generic go-analyzer-secrets \
+                --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+          - name: Apply manifests
+            run: |
+              kubectl apply -f k8s/
+              kubectl rollout status deploy/go-analyzer --timeout=180s
