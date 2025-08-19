@@ -53,25 +53,35 @@ func routes(secret []byte) http.Handler {
 		w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+	// ---- Docs (handle both /docs and /docs/) ----
+	docs := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, `<!doctype html>
-		<html>
-		<head><title>API Docs</title></head>
-		<body>
-		<div id="swagger-ui"></div>
-		<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
-		<script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-		<script>
-		window.onload = () => {
-			SwaggerUIBundle({ url: '/openapi.yaml', dom_id: '#swagger-ui' });
-		};
-		</script>
-		</body>
-		</html>`)
-	})
+<html>
+<head>
+  <title>API Docs</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = () => {
+      SwaggerUIBundle({ url: '/openapi.yaml', dom_id: '#swagger-ui' });
+    };
+  </script>
+</body>
+</html>`)
+	}
+	mux.HandleFunc("/docs", docs)
+	mux.HandleFunc("/docs/", docs)
+
+	// Serve OpenAPI directly from memory so it works in scratch images
 	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "openapi.yaml")
+		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+		io.WriteString(w, openapiYAML)
 	})
 
 	// Require auth (role: user or admin)
@@ -165,3 +175,57 @@ func Analyze(s string) (words int, vowels int, consonants int) {
 	}
 	return
 }
+
+// Minimal OpenAPI spec embedded as a string so /openapi.yaml always works.
+const openapiYAML = `openapi: 3.0.3
+info:
+  title: Go Analyzer Service
+  version: 1.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema: { type: string, example: ok }
+  /analyze:
+    get:
+      summary: Analyze sentence (query)
+      security: [ { BearerAuth: [] } ]
+      parameters:
+        - in: query
+          name: sentence
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Analysis result }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden }
+    post:
+      summary: Analyze sentence (JSON body)
+      security: [ { BearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sentence]
+              properties:
+                sentence: { type: string, example: "Hello, world!" }
+      responses:
+        '200': { description: Analysis result }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+`
