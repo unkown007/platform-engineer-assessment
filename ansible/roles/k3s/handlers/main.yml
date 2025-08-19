@@ -1,0 +1,4 @@
+- name: Restart k3s if needed
+  service:
+    name: k3s
+    state: restarted
