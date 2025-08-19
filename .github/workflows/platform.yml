@@ -139,6 +139,10 @@ jobs:
             - name: Ansible syntax check
               run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
 
+            - name: Test SSH connectivity
+              run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@"$PUBLIC_IP" 'uname -a'
+
+
             - name: Run Ansible Playbook
               run: |
                 ansible-playbook -i ansible/inventory.ini ansible/site.yml
