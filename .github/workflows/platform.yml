@@ -28,7 +28,6 @@ env:
 
 jobs:
     terraform:
-        if: ${{ inputs.run_terraform == true }}
         runs-on: ubuntu-latest
         env:
             TF_IN_AUTOMATION: true
@@ -73,7 +72,6 @@ jobs:
 
     ansible:
         needs: [terraform]
-        if: ${{ inputs.run_ansible == true }}
         runs-on: ubuntu-latest
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
@@ -138,7 +136,7 @@ jobs:
 
 
     unit_tests:
-        if: ${{ inputs.run_build == true }}
+        needs: [ansible]
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -157,7 +155,6 @@ jobs:
 
     build_push:
         needs: [unit_tests, ansible]
-        if: ${{ inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -177,7 +174,6 @@ jobs:
     
     deploy:
         needs: [build_push]
-        if: ${{ inputs.run_deploy == true }}
         runs-on: ubuntu-latest
         steps:
           - uses: actions/checkout@v4
