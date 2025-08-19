@@ -5,7 +5,7 @@
 
 ---
 
-## 🚀 Architecture
+## Architecture
 
 ```
 ┌────────────────────────────┐
@@ -32,7 +32,7 @@
 
 ---
 
-## 📁 Repository layout
+## Repository layout
 
 ```
 .
@@ -51,7 +51,7 @@
 
 ---
 
-## ✅ What’s implemented
+## What’s implemented
 
 - **Single-node K3s** on EC2 (Ubuntu) with kubeconfig at `/home/ubuntu/.kube/config`.
 - **Go API** with endpoints:
@@ -68,11 +68,10 @@
   - Unit tests (`go test`)
   - Build & push image to Docker Hub (`sha` + `latest`)
   - Resolve EC2 by tag, scp kubeconfig, apply secret, inject image, `kubectl apply`
-  - Smoke tests: `/healthz` → 200, `/analyze` → 401 (no token), `/analyze` → 200 (with minted token)
 
 ---
 
-## 🔐 Required GitHub Secrets
+## Required GitHub Secrets
 
 | Secret                    | Purpose                                           |
 |---------------------------|---------------------------------------------------|
@@ -89,7 +88,7 @@
 
 ---
 
-## 🧪 Local development
+## Local development
 
 ```bash
 # run unit tests
@@ -130,7 +129,7 @@ curl -i -X POST "http://localhost:8080/analyze" \
 
 ---
 
-## 🐳 Build & run container locally
+## Build & run container locally
 
 ```bash
 DOCKER_USER=<your-dockerhub-username>
@@ -140,7 +139,7 @@ docker run --rm -e JWT_SECRET=dev-secret -p 8080:8080 docker.io/$DOCKER_USER/go-
 
 ---
 
-## ☸️ Kubernetes (K3s)
+## Kubernetes (K3s)
 
 ### Service exposure
 
@@ -160,7 +159,7 @@ Rotate by changing the repo secret and running a new deploy (deployment restarts
 
 ---
 
-## ⚙️ CI/CD (push to `main`)
+## CI/CD (push to `main`)
 
 Workflow: `.github/workflows/cd-main.yml`
 
@@ -183,7 +182,7 @@ Workflow: `.github/workflows/cd-main.yml`
 
 ---
 
-## 🔎 Verification & evidence (from EC2)
+## Verification & evidence (from EC2)
 
 ```bash
 alias k='sudo k3s kubectl'
@@ -222,7 +221,7 @@ curl -i -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 🧰 Troubleshooting
+## Troubleshooting
 
 - **`/docs` returns 404**  
   The pod is running an older image. Ensure the CD injected the new image and pulled it:
@@ -249,7 +248,7 @@ curl -i -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 🔒 Security notes & next steps
+## Security notes & next steps
 
 - Prefer **GitHub OIDC → AWS IAM role** over long-lived keys.
 - Add TLS + Ingress (Traefik is in K3s) and cert-manager for Let’s Encrypt.
