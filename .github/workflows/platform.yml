@@ -23,6 +23,7 @@ on:
 
 env:
     REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+    NAME_PREFIX: pe-assessment
 
 jobs:
     terraform:
@@ -70,16 +71,39 @@ jobs:
 
 
     ansible:
-        needs: [terraform]
+        # needs: [terraform]
         if: ${{ inputs.run_ansible == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-            - uses: ansible/download-artifact@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
               with:
-                name: tf-state
-                path: terraform
-              continue-on-error: true
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+
+            - name: Resolve EC2 public IP by tag
+              id: ip
+              shell: bash
+              run: |
+                  IP=$(aws ec2 describe-instances \
+                    --filters "Name=tag:Name,Values=${NAME_PREFIX}-ec2" "Name=instance-state-name,Values=running" \
+                    --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+                  if [[ -z "$IP" || "$IP" == "None" ]]; then
+                    echo "No running instance found with tag Name=${NAME_PREFIX}-ec2" >&2
+                    exit 1
+                  fi
+                  echo "PUBLIC_IP=$IP" >> $GITHUB_ENV
+                  echo "public_ip=$IP" >> $GITHUB_OUTPUT
+                  echo "Using PUBLIC_IP=$IP"
+
+            # - uses: ansible/download-artifact@v4
+            #   with:
+            #     name: tf-state
+            #     path: terraform
+            #   continue-on-error: true
             - name: Install Ansible
               run: |
                 python3 -m pip install --upgrade pip
@@ -89,13 +113,13 @@ jobs:
                 mkdir -p ~/.ssh
                 echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
                 chmod 600 ~/.ssh/id_rsa
-            - name: Determine public IP
-              working-directory: terraform
-              run: |
-                if [ -z "${{ env.PUBLIC_IP }}" ]; then
-                    echo "PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null || true)" >> $GITHUB_ENV
-                fi
-                echo "Using PUBLIC_IP=${{ env.PUBLIC_IP }}"
+            # - name: Determine public IP
+            #   working-directory: terraform
+            #   run: |
+            #     if [ -z "${{ env.PUBLIC_IP }}" ]; then
+            #         echo "PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null || true)" >> $GITHUB_ENV
+            #     fi
+            #     echo "Using PUBLIC_IP=${{ env.PUBLIC_IP }}"
             - name: Create inventory
               run: |
                 echo "[k3s]" > ansible/inventory.ini
@@ -125,11 +149,19 @@ jobs:
               run: echo "image=${IMAGE}" >> $GITHUB_OUTPUT
     
     deploy:
-        needs: [build_push]
+        # needs: [build_push]
         if: ${{ inputs.run_deploy == true }}
         runs-on: ubuntu-latest
         steps:
           - uses: actions/checkout@v4
+
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+
           - name: Install kubectl
             run: |
               curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -140,19 +172,42 @@ jobs:
               mkdir -p ~/.ssh
               echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
               chmod 600 ~/.ssh/id_rsa
-          - name: Fetch kubconfig from k3s host
-            env:
-              PUBLIC_IP: ${{ env.PUBLIC_IP }}
+
+          - name: Resolve EC2 public IP by tag
+            id: ip
+            shell: bash
             run: |
-              if [ -z "$PUBLIC_IP" ]; then
-                  echo "PUBLIC_IP env var must be set (from terraform outputs)." && exit 1
+              IP=$(aws ec2 describe-instances \
+                --filters "Name=tag:Name,Values=${NAME_PREFIX}-ec2" "Name=instance-state-name,Values=running" \
+                --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+              if [[ -z "$IP" || "$IP" == "None" ]]; then
+                echo "No running instance found with tag Name=${NAME_PREFIX}-ec2" >&2
+                exit 1
               fi
-              scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/etc/rancher/k3s/k3s.yaml kubeconfig
-              sed -i "s/127.0.0.1/$PUBLIC_IP/" kubeconfig
+              echo "PUBLIC_IP=$IP" >> $GITHUB_ENV
+              echo "Using PUBLIC_IP=$IP"
+
+
+        #   - name: Fetch kubconfig from k3s host
+        #     env:
+        #       PUBLIC_IP: ${{ env.PUBLIC_IP }}
+        #     run: |
+        #       if [ -z "$PUBLIC_IP" ]; then
+        #           echo "PUBLIC_IP env var must be set (from terraform outputs)." && exit 1
+        #       fi
+        #       scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/etc/rancher/k3s/k3s.yaml kubeconfig
+        #       sed -i "s/127.0.0.1/$PUBLIC_IP/" kubeconfig
+        #       echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+
+          - name: Fetch kubeconfig from host (user copy)
+            run: |
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/home/ubuntu/.kube/config kubeconfig
               echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+              
           - name: Inject Built image into manifests
             run: |
               sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
+              
           - name: Apply manifests
             run: |
               kubectl apply -f k8s/

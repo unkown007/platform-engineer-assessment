@@ -1,0 +1,61 @@
+---
+- name: Ensure base packages are present
+  apt:
+    name:
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: yes
+
+- name: Get public IPv4 from EC2 metadata
+  shell: "curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/public-ipv4 || true"
+  register: imds_public_ip
+  changed_when: false
+  failed_when: false
+
+- name: Set public_ip fact
+  set_fact:
+    public_ip: "{{ (imds_public_ip.stdout | trim) if (imds_public_ip.stdout | trim) else ansible_default_ipv4.address }}"
+
+- name: Install K3s server
+  shell: |
+    curl -sfL https://get.k3s.io |       INSTALL_K3S_CHANNEL="{{ k3s_channel }}"       INSTALL_K3S_EXEC="server --node-external-ip={{ public_ip }} {% if k3s_disable_traefik %}--disable traefik{% endif %} --write-kubeconfig-mode=644"       sh -
+  args:
+    creates: /usr/local/bin/k3s
+
+- name: Wait for K3s API to be ready
+  shell: "k3s kubectl get nodes --no-headers"
+  register: k3s_nodes
+  retries: 30
+  delay: 5
+  until: k3s_nodes.rc == 0
+  changed_when: false
+
+- name: Ensure kubeconfig server points to public IP
+  replace:
+    path: "{{ kubeconfig_path }}"
+    regexp: 'server:\s*https://127\.0\.0\.1:6443'
+    replace: "server: https://{{ public_ip }}:6443"
+
+- name: Create .kube directory for ubuntu user
+  file:
+    path: /home/ubuntu/.kube
+    state: directory
+    mode: "0755"
+    owner: ubuntu
+    group: ubuntu
+
+- name: Copy kubeconfig for ubuntu user
+  copy:
+    src: "{{ kubeconfig_path }}"
+    dest: "{{ kubeconfig_user_path }}"
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+  notify: Restart k3s if needed
+
+handlers:
+  - name: Restart k3s if needed
+    service:
+      name: k3s
+      state: restarted

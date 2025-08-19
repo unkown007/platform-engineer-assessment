@@ -1,6 +1,14 @@
-- hosts: k3s
+---
+- name: Install and configure K3s (single-node server)
+  hosts: k3s
   become: true
-  tasks:
-    - name: Ensure k3s will be installed (placeholder)
-      debug:
-        msg: "Step 3 will install K3s"
+  gather_facts: yes
+
+  vars:
+    k3s_disable_traefik: true
+    k3s_channel: stable
+    kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+    kubeconfig_user_path: /home/ubuntu/.kube/config
+
+  roles:
+    - k3s
