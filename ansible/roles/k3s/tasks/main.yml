@@ -1,4 +1,3 @@
----
 - name: Ensure base packages are present
   apt:
     name:
@@ -19,7 +18,10 @@
 
 - name: Install K3s server
   shell: |
-    curl -sfL https://get.k3s.io |       INSTALL_K3S_CHANNEL="{{ k3s_channel }}"       INSTALL_K3S_EXEC="server --node-external-ip={{ public_ip }} {% if k3s_disable_traefik %}--disable traefik{% endif %} --write-kubeconfig-mode=644"       sh -
+    curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_CHANNEL="{{ k3s_channel }}" \
+      INSTALL_K3S_EXEC="server --node-external-ip={{ public_ip }} {% if k3s_disable_traefik %}--disable traefik{% endif %} --write-kubeconfig-mode=644" \
+      sh -
   args:
     creates: /usr/local/bin/k3s
 
@@ -53,9 +55,3 @@
     group: ubuntu
     mode: "0600"
   notify: Restart k3s if needed
-
-handlers:
-  - name: Restart k3s if needed
-    service:
-      name: k3s
-      state: restarted

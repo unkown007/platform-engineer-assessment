@@ -124,6 +124,10 @@ jobs:
               run: |
                 echo "[k3s]" > ansible/inventory.ini
                 echo "${{ env.PUBLIC_IP }}" ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa >> ansible/inventory.ini
+
+            - name: Ansible syntax check
+              run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+
             - name: Run Ansible Playbook
               run: |
                 ansible-playbook -i ansible/inventory.ini ansible/site.yml
@@ -207,7 +211,7 @@ jobs:
           - name: Inject Built image into manifests
             run: |
               sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
-              
+
           - name: Apply manifests
             run: |
               kubectl apply -f k8s/
