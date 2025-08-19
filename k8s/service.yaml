@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-analyzer
+  labels:
+    app: go-analyzer
+spec:
+  type: NodePort
+  selector:
+    app: go-analyzer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080

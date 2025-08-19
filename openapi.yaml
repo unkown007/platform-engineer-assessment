@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: Go Analyzer Service
+  version: 1.0.0
+  description: |
+    Simple microservice that counts words, vowels, and consonants in a sentence.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+  /analyze:
+    get:
+      summary: Analyze sentence (query)
+      parameters:
+        - in: query
+          name: sentence
+          required: true
+          schema:
+            type: string
+          description: Sentence to analyze
+      responses:
+        '200':
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeResponse'
+        '400':
+          description: Missing/invalid input
+    post:
+      summary: Analyze sentence (JSON body)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeResponse'
+components:
+  schemas:
+    AnalyzeRequest:
+      type: object
+      required: [sentence]
+      properties:
+        sentence:
+          type: string
+          example: Hello, world!
+    AnalyzeResponse:
+      type: object
+      properties:
+        words:
+          type: integer
+          example: 2
+        vowels:
+          type: integer
+          example: 3
+        consonants:
+          type: integer
+          example: 7
+        sentence:
+          type: string
+          example: Hello, world!
