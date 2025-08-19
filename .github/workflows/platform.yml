@@ -116,6 +116,14 @@ jobs:
                 mkdir -p ~/.ssh
                 echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
                 chmod 600 ~/.ssh/id_rsa
+
+
+            - name: Trust EC2 host key (avoid Host key verification failed)
+              run: |
+                mkdir -p ~/.ssh
+                ssh-keyscan -H "$PUBLIC_IP" >> ~/.ssh/known_hosts
+                chmod 644 ~/.ssh/known_hosts
+
             # - name: Determine public IP
             #   working-directory: terraform
             #   run: |
