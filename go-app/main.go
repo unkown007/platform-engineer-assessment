@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -50,6 +51,27 @@ func routes(secret []byte) http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
+	})
+
+	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, `<!doctype html>
+		<html>
+		<head><title>API Docs</title></head>
+		<body>
+		<div id="swagger-ui"></div>
+		<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
+		<script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+		<script>
+		window.onload = () => {
+			SwaggerUIBundle({ url: '/openapi.yaml', dom_id: '#swagger-ui' });
+		};
+		</script>
+		</body>
+		</html>`)
+	})
+	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "openapi.yaml")
 	})
 
 	// Require auth (role: user or admin)
