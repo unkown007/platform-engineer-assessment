@@ -74,6 +74,9 @@ jobs:
         # needs: [terraform]
         if: ${{ inputs.run_ansible == true }}
         runs-on: ubuntu-latest
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
         steps:
             - uses: actions/checkout@v4
 
