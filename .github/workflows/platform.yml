@@ -149,7 +149,7 @@ jobs:
 
 
     unit_tests:
-        if: ${{ inputs.run_build == 'true' }}
+        if: ${{ inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
