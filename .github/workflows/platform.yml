@@ -71,7 +71,7 @@ jobs:
 
     ansible:
         needs: [terraform]
-        if: ${{ inputs.run_ansible == 'true' }}
+        if: ${{ inputs.run_ansible == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -107,7 +107,7 @@ jobs:
 
     build_push:
         needs: [ansible]
-        if: ${{ inputs.run_build == 'true' }}
+        if: ${{ inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -126,7 +126,7 @@ jobs:
     
     deploy:
         needs: [build_push]
-        if: ${{ inputs.run_deploy == 'true' }}
+        if: ${{ inputs.run_deploy == true }}
         runs-on: ubuntu-latest
         steps:
           - uses: actions/checkout@v4
