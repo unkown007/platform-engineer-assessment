@@ -24,6 +24,7 @@ on:
 env:
     REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
     NAME_PREFIX: pe-assessment
+    DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
     terraform:
