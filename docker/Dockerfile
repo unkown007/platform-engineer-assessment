@@ -1,17 +1,28 @@
 # ---------- Build stage ----------
     FROM golang:1.22-alpine AS build
     WORKDIR /src
-    COPY go-app/ ./
+    
+    # Install git (Go may try to read VCS info)
     RUN apk add --no-cache git
     
-    # Accept platform from Buildx; default to amd64 if not provided
+    # Copy module file first to leverage layer cache
+    COPY go-app/go.mod ./
+    # If you later add deps, this will download them and cache the layer
+    RUN go mod download
+    
+    # Copy the rest of the sources
+    COPY go-app/*.go ./
+    
+    # Accept platform from Buildx (defaults provided for plain docker build)
     ARG TARGETOS=linux
     ARG TARGETARCH=amd64
     
-    # Create output dir, then build static binary
+    # Create output dir, build static binary, disable VCS stamping for reliability
     RUN mkdir -p /out \
-     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-        go build -ldflags="-s -w" -o /out/app .
+     && go version \
+     && ls -la \
+     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOFLAGS="-buildvcs=false" \
+        go build -v -ldflags="-s -w" -o /out/app .
     
     # ---------- Runtime stage ----------
     FROM scratch
