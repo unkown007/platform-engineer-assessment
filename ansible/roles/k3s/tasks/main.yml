@@ -47,10 +47,22 @@
     owner: ubuntu
     group: ubuntu
 
+- name: Check kubeconfig exists
+  stat:
+    path: "{{ kubeconfig_path }}"
+  register: kcfg
+
+- name: Fail if kubeconfig is missing (k3s not ready yet)
+  fail:
+    msg: "k3s kubeconfig not found at {{ kubeconfig_path }}"
+  when: not kcfg.stat.exists
+
 - name: Copy kubeconfig for ubuntu user
+  become: true
   copy:
     src: "{{ kubeconfig_path }}"
     dest: "{{ kubeconfig_user_path }}"
+    remote_src: true
     owner: ubuntu
     group: ubuntu
     mode: "0600"
