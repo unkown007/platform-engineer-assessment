@@ -72,7 +72,7 @@ jobs:
 
 
     ansible:
-        # needs: [terraform]
+        needs: [terraform]
         if: ${{ inputs.run_ansible == true }}
         runs-on: ubuntu-latest
         env:
@@ -103,11 +103,6 @@ jobs:
                   echo "public_ip=$IP" >> $GITHUB_OUTPUT
                   echo "Using PUBLIC_IP=$IP"
 
-            # - uses: ansible/download-artifact@v4
-            #   with:
-            #     name: tf-state
-            #     path: terraform
-            #   continue-on-error: true
             - name: Install Ansible
               run: |
                 python3 -m pip install --upgrade pip
@@ -125,13 +120,6 @@ jobs:
                 ssh-keyscan -H "$PUBLIC_IP" >> ~/.ssh/known_hosts
                 chmod 644 ~/.ssh/known_hosts
 
-            # - name: Determine public IP
-            #   working-directory: terraform
-            #   run: |
-            #     if [ -z "${{ env.PUBLIC_IP }}" ]; then
-            #         echo "PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null || true)" >> $GITHUB_ENV
-            #     fi
-            #     echo "Using PUBLIC_IP=${{ env.PUBLIC_IP }}"
             - name: Create inventory
               run: |
                 echo "[k3s]" > ansible/inventory.ini
@@ -168,8 +156,7 @@ jobs:
 
 
     build_push:
-        # needs: [ansible]
-        needs: [unit_tests]
+        needs: [unit_tests, ansible]
         if: ${{ inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
@@ -189,7 +176,7 @@ jobs:
                 docker push "$LATEST"
     
     deploy:
-        # needs: [build_push]
+        needs: [build_push]
         if: ${{ inputs.run_deploy == true }}
         runs-on: ubuntu-latest
         steps:
@@ -243,10 +230,6 @@ jobs:
             run: |
               scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$PUBLIC_IP:/home/ubuntu/.kube/config kubeconfig
               echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
-              
-        #   - name: Inject Built image into manifests
-        #     run: |
-        #       sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
 
           - name: Set IMAGE (use stable :latest)
             run: |
@@ -263,17 +246,6 @@ jobs:
                 sed -i -E "s|(image:\s*).*$|\1$IMAGE|" k8s/deployment.yaml
               fi
               grep -n 'image:' k8s/deployment.yaml
-
-        #   - name: Pick image and inject
-        #     run: |
-        #       IMAGE="${{ needs.build_push.outputs.image }}"
-        #       if [ -z "$IMAGE" ]; then
-        #         echo "No image from build_push; falling back to :latest"
-        #         IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:latest"
-        #       fi
-        #       echo "Using IMAGE=$IMAGE"
-        #       sed -i "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml
-        #       grep -n 'image:' k8s/deployment.yaml
 
           - name: Apply runtime secret
             run: |
