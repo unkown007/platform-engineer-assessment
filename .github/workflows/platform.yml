@@ -161,7 +161,7 @@ jobs:
               run: |
                 IMAGE="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/go-analyzer:${{ github.sha }}"
                 echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-                docker build -t "$IMAGE" -f docker/Dockerfile .
+                docker build -t "$IMAGE" -f go-app/Dockerfile ./go-app
                 docker push "$IMAGE"
             - name: Expose image output
               id: img
