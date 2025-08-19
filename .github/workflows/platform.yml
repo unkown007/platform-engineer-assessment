@@ -274,6 +274,12 @@ jobs:
         #       sed -i "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml
         #       grep -n 'image:' k8s/deployment.yaml
 
+          - name: Apply runtime secret
+            run: |
+              kubectl create secret generic go-analyzer-secrets \
+                --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
           - name: Apply manifests
             run: |
               kubectl apply -f k8s/

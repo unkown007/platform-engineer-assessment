@@ -20,6 +20,12 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: go-analyzer-secrets
+                  key: JWT_SECRET
           readinessProbe:
             httpGet:
               path: /healthz
