@@ -155,6 +155,42 @@ jobs:
                 path: go-app/coverage.out
 
 
+    sonar:
+      needs: [unit_tests]
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            fetch-depth: 0
+
+        # Get coverage artifact created by unit_tests
+        - uses: actions/download-artifact@v4
+          with:
+            name: go-coverage
+            path: go-app
+
+        # (Optional) Set Go for any extra scanners that need it
+        - uses: actions/setup-go@v5
+          with:
+            go-version: '1.22'
+
+        # Run the scan
+        - name: SonarCloud Scan
+          uses: SonarSource/sonarcloud-github-action@v2
+          env:
+            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+            # Not strictly required for SonarCloud, but harmless:
+            SONAR_HOST_URL: https://sonarcloud.io
+
+        # Fail the pipeline if the Quality Gate is red
+        - name: SonarCloud Quality Gate
+          uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+          env:
+            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+            SONAR_HOST_URL: https://sonarcloud.io
+          with:
+            scanMetadataReportFile: .scannerwork/report-task.txt
+
     build_push:
         needs: [unit_tests, ansible]
         if: ${{ github.event.inputs.run_build == true }}
