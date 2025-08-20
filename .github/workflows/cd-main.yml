@@ -34,6 +34,13 @@ jobs:
           with:
             fetch-depth: 0
 
+        - name: Show workspace & properties file
+          run: |
+            pwd
+            ls -la
+            echo "--- sonar-project.properties ---"
+            sed -n '1,120p' sonar-project.properties || true
+
         # Get coverage artifact created by unit_tests
         - uses: actions/download-artifact@v4
           with:
