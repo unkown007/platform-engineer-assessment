@@ -190,6 +190,7 @@ jobs:
             SONAR_HOST_URL: https://sonarcloud.io
           with:
             projectBaseDir: ${{ github.workspace }}
+            args: -X
 
         # Fail the pipeline if the Quality Gate is red
         - name: SonarCloud Quality Gate
