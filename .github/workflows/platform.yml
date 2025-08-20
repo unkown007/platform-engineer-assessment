@@ -192,7 +192,7 @@ jobs:
             scanMetadataReportFile: .scannerwork/report-task.txt
 
     build_push:
-        needs: [unit_tests, ansible]
+        needs: [unit_tests, ansible, sonar]
         if: ${{ github.event.inputs.run_build == true }}
         runs-on: ubuntu-latest
         steps:
